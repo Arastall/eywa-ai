@@ -8,6 +8,9 @@ import * as bookings from '../controllers/bookings.js';
 import * as pms from '../controllers/pms.js';
 import * as ai from '../controllers/ai.js';
 
+// PMS Gateway
+import pmsGateway from './pms';
+
 const router = Router();
 
 // Health check
@@ -42,5 +45,8 @@ router.get('/ai/stats', authenticate, ai.getAIStats);
 router.get('/ai/sessions', authenticate, ai.getAISessions);
 router.get('/ai/roi', authenticate, ai.getROIMetrics);
 router.get('/ai/compare', authenticate, ai.compareProviders);
+
+// PMS Gateway routes (public for testing)
+router.use(pmsGateway);
 
 export default router;

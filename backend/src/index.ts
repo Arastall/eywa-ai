@@ -15,6 +15,8 @@ app.use(cors({
   origin: [
     'http://localhost:3000',
     'https://demo.cenaia-labs.com',
+    'https://eywa-ai.com',
+    'https://www.eywa-ai.com',
   ],
   credentials: true
 }));
