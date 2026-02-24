@@ -8,6 +8,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
 import { query } from '../utils/db.js';
 import * as googlePlaces from '../services/google-places.js';
+import * as tripAdvisor from '../services/tripadvisor.js';
 import * as eywaScore from '../services/eywa-score.js';
 
 /**
@@ -158,13 +159,14 @@ export const linkReviewSources = async (req: AuthRequest, res: Response) => {
     const linked: Record<string, any> = {};
     const errors: Record<string, string> = {};
 
+    // Get hotel name for verification
+    const hotelResult = await query('SELECT name FROM hotels WHERE id = $1', [hotelId]);
+    const hotelName = hotelResult.rows[0]?.name || '';
+
     // Link Google Places
     if (google?.placeId) {
       try {
         // Verify the place_id is valid
-        const hotelResult = await query('SELECT name FROM hotels WHERE id = $1', [hotelId]);
-        const hotelName = hotelResult.rows[0]?.name || '';
-
         const verification = await googlePlaces.verifyPlaceId(google.placeId, hotelName);
         
         if (!verification.valid) {
@@ -201,10 +203,48 @@ export const linkReviewSources = async (req: AuthRequest, res: Response) => {
       }
     }
 
-    // Link TripAdvisor (placeholder - requires API registration)
+    // Link TripAdvisor
     if (tripadvisor?.locationId) {
-      // TODO: Implement TripAdvisor integration in Phase 2
-      errors.tripadvisor = 'TripAdvisor integration not yet available';
+      try {
+        if (!tripAdvisor.isTripAdvisorConfigured()) {
+          errors.tripadvisor = 'TripAdvisor API not configured';
+        } else {
+          // Verify the location_id is valid
+          const verification = await tripAdvisor.verifyLocationId(tripadvisor.locationId, hotelName);
+          
+          if (!verification.valid) {
+            errors.tripadvisor = 'Invalid TripAdvisor Location ID';
+          } else {
+            // Upsert the review source
+            await query(
+              `INSERT INTO hotel_review_sources (hotel_id, source, external_id, name, is_verified)
+               VALUES ($1, 'tripadvisor', $2, $3, $4)
+               ON CONFLICT (hotel_id, source) 
+               DO UPDATE SET external_id = $2, name = $3, is_verified = $4, updated_at = NOW()`,
+              [hotelId, tripadvisor.locationId, verification.actualName, verification.matchScore >= 0.7]
+            );
+
+            // Fetch initial ratings and reviews
+            const { details, reviews } = await tripAdvisor.getFullLocationData(tripadvisor.locationId);
+            if (details) {
+              // Store rating
+              await storeTripAdvisorRating(hotelId, details);
+              // Store reviews
+              await storeTripAdvisorReviews(hotelId, reviews);
+            }
+
+            linked.tripadvisor = {
+              locationId: tripadvisor.locationId,
+              name: verification.actualName,
+              isVerified: verification.matchScore >= 0.7,
+              matchScore: verification.matchScore,
+            };
+          }
+        }
+      } catch (err: any) {
+        console.error('Error linking TripAdvisor:', err);
+        errors.tripadvisor = err.message;
+      }
     }
 
     // Recompute Eywa Score if we linked at least one source
@@ -254,8 +294,18 @@ export const refreshRatings = async (req: AuthRequest, res: Response) => {
             await storeGoogleReviews(hotelId, details);
             refreshed.push('google');
           }
+        } else if (source.source === 'tripadvisor') {
+          if (!tripAdvisor.isTripAdvisorConfigured()) {
+            errors.tripadvisor = 'TripAdvisor API not configured';
+          } else {
+            const { details, reviews } = await tripAdvisor.getFullLocationData(source.external_id);
+            if (details) {
+              await storeTripAdvisorRating(hotelId, details);
+              await storeTripAdvisorReviews(hotelId, reviews);
+              refreshed.push('tripadvisor');
+            }
+          }
         }
-        // TODO: Add TripAdvisor refresh in Phase 2
       } catch (err: any) {
         errors[source.source] = err.message;
       }
@@ -307,6 +357,7 @@ export const getReviewSources = async (req: AuthRequest, res: Response) => {
         updatedAt: s.updated_at,
       })),
       googlePlacesConfigured: googlePlaces.isGooglePlacesConfigured(),
+      tripAdvisorConfigured: tripAdvisor.isTripAdvisorConfigured(),
     });
   } catch (err: any) {
     console.error('Error fetching review sources:', err);
@@ -316,7 +367,7 @@ export const getReviewSources = async (req: AuthRequest, res: Response) => {
 
 /**
  * POST /api/hotels/:id/search-places
- * Search for matching places on Google
+ * Search for matching places on Google and TripAdvisor
  */
 export const searchPlaces = async (req: AuthRequest, res: Response) => {
   try {
@@ -325,10 +376,6 @@ export const searchPlaces = async (req: AuthRequest, res: Response) => {
     // Verify the hotel belongs to the authenticated user
     if (req.user?.hotel_id !== hotelId) {
       return res.status(403).json({ error: 'Access denied to this hotel' });
-    }
-
-    if (!googlePlaces.isGooglePlacesConfigured()) {
-      return res.status(503).json({ error: 'Google Places API not configured' });
     }
 
     // Get hotel info
@@ -342,15 +389,163 @@ export const searchPlaces = async (req: AuthRequest, res: Response) => {
     }
 
     const hotel = hotelResult.rows[0];
-    const results = await googlePlaces.searchHotel(hotel.name, hotel.city, hotel.country);
+    const searchQuery = `${hotel.name} ${hotel.city} ${hotel.country}`;
+    
+    const results: Record<string, any> = {
+      query: searchQuery,
+      google: [],
+      tripadvisor: [],
+    };
+    const errors: Record<string, string> = {};
+
+    // Search Google Places
+    if (googlePlaces.isGooglePlacesConfigured()) {
+      try {
+        results.google = await googlePlaces.searchHotel(hotel.name, hotel.city, hotel.country);
+      } catch (err: any) {
+        errors.google = err.message;
+      }
+    } else {
+      errors.google = 'Google Places API not configured';
+    }
+
+    // Search TripAdvisor
+    if (tripAdvisor.isTripAdvisorConfigured()) {
+      try {
+        results.tripadvisor = await tripAdvisor.searchHotel(hotel.name, hotel.city, hotel.country);
+      } catch (err: any) {
+        errors.tripadvisor = err.message;
+      }
+    } else {
+      errors.tripadvisor = 'TripAdvisor API not configured';
+    }
 
     res.json({
       hotelId,
-      query: `${hotel.name} ${hotel.city} ${hotel.country}`,
-      results,
+      ...results,
+      errors: Object.keys(errors).length > 0 ? errors : undefined,
     });
   } catch (err: any) {
     console.error('Error searching places:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * GET /api/hotels/:id/competitors
+ * Returns nearby competitor hotels with their ratings
+ */
+export const getCompetitors = async (req: AuthRequest, res: Response) => {
+  try {
+    const hotelId = req.params.id;
+
+    // Verify the hotel belongs to the authenticated user
+    if (req.user?.hotel_id !== hotelId) {
+      return res.status(403).json({ error: 'Access denied to this hotel' });
+    }
+
+    // Get hotel info
+    const hotelResult = await query(
+      'SELECT name, city, country FROM hotels WHERE id = $1',
+      [hotelId]
+    );
+
+    if (hotelResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Hotel not found' });
+    }
+
+    const hotel = hotelResult.rows[0];
+    const limit = Math.min(parseInt(req.query.limit as string) || 10, 25);
+    const radius = parseInt(req.query.radius as string) || 5; // km
+
+    // Get hotel's own ratings for comparison
+    const ownRatingsResult = await query(
+      `SELECT DISTINCT ON (source) source, rating, review_count, ranking, ranking_context
+       FROM hotel_ratings
+       WHERE hotel_id = $1
+       ORDER BY source, fetched_at DESC`,
+      [hotelId]
+    );
+
+    const ownRatings: Record<string, any> = {};
+    for (const r of ownRatingsResult.rows) {
+      ownRatings[r.source] = {
+        rating: parseFloat(r.rating),
+        reviewCount: r.review_count,
+        ranking: r.ranking,
+        rankingContext: r.ranking_context,
+      };
+    }
+
+    // Get Eywa score
+    const eywaResult = await query(
+      `SELECT eywa_score FROM hotel_eywa_scores 
+       WHERE hotel_id = $1 
+       ORDER BY computed_at DESC 
+       LIMIT 1`,
+      [hotelId]
+    );
+
+    const competitors: any[] = [];
+    const errors: Record<string, string> = {};
+
+    // Search for nearby competitors on TripAdvisor
+    if (tripAdvisor.isTripAdvisorConfigured()) {
+      try {
+        const locationQuery = `hotels in ${hotel.city} ${hotel.country}`;
+        const nearbyResults = await tripAdvisor.searchNearbyHotels(locationQuery, radius);
+        
+        // Get details for each competitor (limit API calls)
+        const limitedResults = nearbyResults.slice(0, limit);
+        
+        for (const result of limitedResults) {
+          try {
+            // Skip our own hotel if it appears in results
+            if (result.name.toLowerCase() === hotel.name.toLowerCase()) {
+              continue;
+            }
+
+            const details = await tripAdvisor.getLocationDetails(result.location_id);
+            if (details) {
+              competitors.push({
+                name: details.name,
+                source: 'tripadvisor',
+                locationId: details.location_id,
+                rating: details.rating,
+                reviewCount: details.num_reviews,
+                ranking: details.ranking_position,
+                rankingTotal: details.ranking_total,
+                rankingContext: details.ranking,
+                webUrl: details.web_url,
+                address: details.address_obj.address_string,
+              });
+            }
+          } catch (err: any) {
+            console.error(`Error fetching competitor details for ${result.location_id}:`, err);
+          }
+        }
+      } catch (err: any) {
+        errors.tripadvisor = err.message;
+      }
+    } else {
+      errors.tripadvisor = 'TripAdvisor API not configured';
+    }
+
+    // Sort competitors by rating
+    competitors.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+
+    res.json({
+      hotelId,
+      hotelName: hotel.name,
+      location: `${hotel.city}, ${hotel.country}`,
+      ownRatings,
+      eywaScore: eywaResult.rows[0]?.eywa_score ? parseFloat(eywaResult.rows[0].eywa_score) : null,
+      competitors: competitors.slice(0, limit),
+      competitorCount: competitors.length,
+      errors: Object.keys(errors).length > 0 ? errors : undefined,
+    });
+  } catch (err: any) {
+    console.error('Error fetching competitors:', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -390,6 +585,47 @@ async function storeGoogleReviews(hotelId: string, details: googlePlaces.GoogleP
         review.text,
         review.language,
         review.relative_time_description,
+        publishedAt,
+      ]
+    );
+  }
+}
+
+async function storeTripAdvisorRating(hotelId: string, details: tripAdvisor.TripAdvisorDetails) {
+  const rankingInfo = tripAdvisor.parseRankingString(details.ranking);
+  
+  await query(
+    `INSERT INTO hotel_ratings (hotel_id, source, rating, review_count, ranking, ranking_context, fetched_at)
+     VALUES ($1, 'tripadvisor', $2, $3, $4, $5, NOW())
+     ON CONFLICT (hotel_id, source, DATE(fetched_at))
+     DO UPDATE SET rating = $2, review_count = $3, ranking = $4, ranking_context = $5, fetched_at = NOW()`,
+    [hotelId, details.rating, details.num_reviews, rankingInfo.position, rankingInfo.context]
+  );
+}
+
+async function storeTripAdvisorReviews(hotelId: string, reviews: tripAdvisor.TripAdvisorReview[]) {
+  for (const review of reviews) {
+    const publishedAt = review.published_date ? new Date(review.published_date) : null;
+    
+    await query(
+      `INSERT INTO hotel_reviews (
+         hotel_id, source, external_review_id, author_name, author_url,
+         profile_photo_url, rating, text, language, relative_time_description, published_at
+       ) VALUES ($1, 'tripadvisor', $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       ON CONFLICT (hotel_id, source, external_review_id) 
+       DO UPDATE SET 
+         author_name = $3, rating = $6, text = $7, 
+         relative_time_description = $9, fetched_at = NOW()`,
+      [
+        hotelId,
+        `ta_${review.id}`, // Use TripAdvisor review ID
+        review.user.username,
+        review.url,
+        review.user.avatar?.small?.url || '',
+        review.rating,
+        review.text,
+        review.lang,
+        review.travel_date || '',
         publishedAt,
       ]
     );

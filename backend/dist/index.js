@@ -8,6 +8,7 @@ const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const index_js_1 = __importDefault(require("./routes/index.js"));
+const cron_scheduler_js_1 = require("./services/cron-scheduler.js");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 55100;
@@ -39,4 +40,8 @@ app.use((err, _req, res, _next) => {
 app.listen(PORT, () => {
     console.log(`🚀 EYWA API running on port ${PORT}`);
     console.log(`📡 Health check: http://localhost:${PORT}/api/health`);
+    // Initialize cron scheduler
+    if (process.env.ENABLE_CRON !== 'false') {
+        (0, cron_scheduler_js_1.initializeScheduler)();
+    }
 });

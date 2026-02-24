@@ -44,8 +44,11 @@ const hotels = __importStar(require("../controllers/hotels.js"));
 const bookings = __importStar(require("../controllers/bookings.js"));
 const pms = __importStar(require("../controllers/pms.js"));
 const ai = __importStar(require("../controllers/ai.js"));
+const reviews = __importStar(require("../controllers/reviews.js"));
+const analytics = __importStar(require("../controllers/analytics.js"));
+const admin = __importStar(require("../controllers/admin.js"));
 // PMS Gateway
-const pms_js_1 = __importDefault(require("./pms.js"));
+const pms_1 = __importDefault(require("./pms"));
 const router = (0, express_1.Router)();
 // Health check
 router.get('/health', (_, res) => res.json({ status: 'ok', service: 'eywa-api' }));
@@ -74,6 +77,35 @@ router.get('/ai/stats', auth_js_1.authenticate, ai.getAIStats);
 router.get('/ai/sessions', auth_js_1.authenticate, ai.getAISessions);
 router.get('/ai/roi', auth_js_1.authenticate, ai.getROIMetrics);
 router.get('/ai/compare', auth_js_1.authenticate, ai.compareProviders);
+// Reviews & Ratings routes
+router.get('/hotels/:id/ratings', auth_js_1.authenticate, reviews.getRatings);
+router.get('/hotels/:id/reviews', auth_js_1.authenticate, reviews.getReviews);
+router.post('/hotels/:id/link-reviews', auth_js_1.authenticate, reviews.linkReviewSources);
+router.post('/hotels/:id/refresh-ratings', auth_js_1.authenticate, reviews.refreshRatings);
+router.get('/hotels/:id/review-sources', auth_js_1.authenticate, reviews.getReviewSources);
+router.post('/hotels/:id/search-places', auth_js_1.authenticate, reviews.searchPlaces);
+router.get('/hotels/:id/competitors', auth_js_1.authenticate, reviews.getCompetitors);
+// Analytics routes
+router.get('/hotels/:id/analytics/summary', auth_js_1.authenticate, analytics.getSummary);
+router.get('/hotels/:id/analytics/timeline', auth_js_1.authenticate, analytics.getTimeline);
+router.get('/hotels/:id/analytics/review-sentiment', auth_js_1.authenticate, analytics.getReviewSentiment);
+router.get('/hotels/:id/analytics/alerts', auth_js_1.authenticate, analytics.getAlerts);
+router.get('/hotels/:id/competitors', auth_js_1.authenticate, analytics.getCompetitors);
+router.get('/hotels/:id/market-position', auth_js_1.authenticate, analytics.getMarketPosition);
+// Portfolio routes (aggregated stats)
+router.get('/portfolio/stats', auth_js_1.authenticate, analytics.getPortfolioStats);
+router.get('/portfolio/trends', auth_js_1.authenticate, analytics.getPortfolioTrends);
+// Sync status and auto-link routes
+router.get('/hotels/:id/sync-status', auth_js_1.authenticate, admin.getHotelSyncStatus);
+router.post('/hotels/:id/auto-link', auth_js_1.authenticate, admin.autoLinkHotel);
+// Admin routes (require admin role)
+router.post('/admin/sync/trigger', auth_js_1.authenticate, (0, auth_js_1.requireRole)('admin'), admin.triggerBulkSync);
+router.post('/admin/sync/hotels', auth_js_1.authenticate, (0, auth_js_1.requireRole)('admin'), admin.syncSpecificHotels);
+router.get('/admin/sync/jobs', auth_js_1.authenticate, (0, auth_js_1.requireRole)('admin'), admin.getSyncJobs);
+router.get('/admin/sync/jobs/:id/errors', auth_js_1.authenticate, (0, auth_js_1.requireRole)('admin'), admin.getSyncJobErrors);
+router.get('/admin/sync/pending', auth_js_1.authenticate, (0, auth_js_1.requireRole)('admin'), admin.getPendingSyncHotels);
+router.get('/admin/scheduler/status', auth_js_1.authenticate, (0, auth_js_1.requireRole)('admin'), admin.getSchedulerStatus);
+router.post('/admin/hotels/auto-link-batch', auth_js_1.authenticate, (0, auth_js_1.requireRole)('admin'), admin.autoLinkHotelsBatch);
 // PMS Gateway routes (public for testing)
-router.use(pms_js_1.default);
+router.use(pms_1.default);
 exports.default = router;

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, requireRole } from '../middleware/auth.js';
 
 // Controllers
 import * as auth from '../controllers/auth.js';
@@ -9,6 +9,7 @@ import * as pms from '../controllers/pms.js';
 import * as ai from '../controllers/ai.js';
 import * as reviews from '../controllers/reviews.js';
 import * as analytics from '../controllers/analytics.js';
+import * as admin from '../controllers/admin.js';
 
 // PMS Gateway
 import pmsGateway from './pms';
@@ -68,6 +69,19 @@ router.get('/hotels/:id/market-position', authenticate, analytics.getMarketPosit
 // Portfolio routes (aggregated stats)
 router.get('/portfolio/stats', authenticate, analytics.getPortfolioStats);
 router.get('/portfolio/trends', authenticate, analytics.getPortfolioTrends);
+
+// Sync status and auto-link routes
+router.get('/hotels/:id/sync-status', authenticate, admin.getHotelSyncStatus);
+router.post('/hotels/:id/auto-link', authenticate, admin.autoLinkHotel);
+
+// Admin routes (require admin role)
+router.post('/admin/sync/trigger', authenticate, requireRole('admin'), admin.triggerBulkSync);
+router.post('/admin/sync/hotels', authenticate, requireRole('admin'), admin.syncSpecificHotels);
+router.get('/admin/sync/jobs', authenticate, requireRole('admin'), admin.getSyncJobs);
+router.get('/admin/sync/jobs/:id/errors', authenticate, requireRole('admin'), admin.getSyncJobErrors);
+router.get('/admin/sync/pending', authenticate, requireRole('admin'), admin.getPendingSyncHotels);
+router.get('/admin/scheduler/status', authenticate, requireRole('admin'), admin.getSchedulerStatus);
+router.post('/admin/hotels/auto-link-batch', authenticate, requireRole('admin'), admin.autoLinkHotelsBatch);
 
 // PMS Gateway routes (public for testing)
 router.use(pmsGateway);

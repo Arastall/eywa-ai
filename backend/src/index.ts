@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
 import routes from './routes/index.js';
+import { initializeScheduler } from './services/cron-scheduler.js';
 
 dotenv.config();
 
@@ -41,4 +42,9 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 app.listen(PORT, () => {
   console.log(`🚀 EYWA API running on port ${PORT}`);
   console.log(`📡 Health check: http://localhost:${PORT}/api/health`);
+  
+  // Initialize cron scheduler
+  if (process.env.ENABLE_CRON !== 'false') {
+    initializeScheduler();
+  }
 });
