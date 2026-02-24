@@ -7,6 +7,7 @@ import * as hotels from '../controllers/hotels.js';
 import * as bookings from '../controllers/bookings.js';
 import * as pms from '../controllers/pms.js';
 import * as ai from '../controllers/ai.js';
+import * as reviews from '../controllers/reviews.js';
 
 // PMS Gateway
 import pmsGateway from './pms';
@@ -45,6 +46,14 @@ router.get('/ai/stats', authenticate, ai.getAIStats);
 router.get('/ai/sessions', authenticate, ai.getAISessions);
 router.get('/ai/roi', authenticate, ai.getROIMetrics);
 router.get('/ai/compare', authenticate, ai.compareProviders);
+
+// Reviews & Ratings routes
+router.get('/hotels/:id/ratings', authenticate, reviews.getRatings);
+router.get('/hotels/:id/reviews', authenticate, reviews.getReviews);
+router.post('/hotels/:id/link-reviews', authenticate, reviews.linkReviewSources);
+router.post('/hotels/:id/refresh-ratings', authenticate, reviews.refreshRatings);
+router.get('/hotels/:id/review-sources', authenticate, reviews.getReviewSources);
+router.post('/hotels/:id/search-places', authenticate, reviews.searchPlaces);
 
 // PMS Gateway routes (public for testing)
 router.use(pmsGateway);
