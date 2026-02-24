@@ -8,6 +8,7 @@ import * as bookings from '../controllers/bookings.js';
 import * as pms from '../controllers/pms.js';
 import * as ai from '../controllers/ai.js';
 import * as reviews from '../controllers/reviews.js';
+import * as analytics from '../controllers/analytics.js';
 
 // PMS Gateway
 import pmsGateway from './pms';
@@ -54,6 +55,19 @@ router.post('/hotels/:id/link-reviews', authenticate, reviews.linkReviewSources)
 router.post('/hotels/:id/refresh-ratings', authenticate, reviews.refreshRatings);
 router.get('/hotels/:id/review-sources', authenticate, reviews.getReviewSources);
 router.post('/hotels/:id/search-places', authenticate, reviews.searchPlaces);
+router.get('/hotels/:id/competitors', authenticate, reviews.getCompetitors);
+
+// Analytics routes
+router.get('/hotels/:id/analytics/summary', authenticate, analytics.getSummary);
+router.get('/hotels/:id/analytics/timeline', authenticate, analytics.getTimeline);
+router.get('/hotels/:id/analytics/review-sentiment', authenticate, analytics.getReviewSentiment);
+router.get('/hotels/:id/analytics/alerts', authenticate, analytics.getAlerts);
+router.get('/hotels/:id/competitors', authenticate, analytics.getCompetitors);
+router.get('/hotels/:id/market-position', authenticate, analytics.getMarketPosition);
+
+// Portfolio routes (aggregated stats)
+router.get('/portfolio/stats', authenticate, analytics.getPortfolioStats);
+router.get('/portfolio/trends', authenticate, analytics.getPortfolioTrends);
 
 // PMS Gateway routes (public for testing)
 router.use(pmsGateway);
