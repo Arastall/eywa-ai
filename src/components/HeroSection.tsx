@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import Link from "next/link";
 import { AnimatedCounter } from "./AnimatedCounter";
 
 export function HeroSection() {
@@ -87,10 +88,10 @@ export function HeroSection() {
           transition={{ delay: 1.3 }}
           className="mt-12"
         >
-          <button className="group relative px-8 py-4 bg-gradient-to-r from-cyan-500 to-purple-500 rounded-full text-lg font-semibold overflow-hidden transition-all hover:scale-105 hover:shadow-xl hover:shadow-cyan-500/25">
+          <Link href="/register" className="group relative inline-block px-8 py-4 bg-gradient-to-r from-cyan-500 to-purple-500 rounded-full text-lg font-semibold overflow-hidden transition-all hover:scale-105 hover:shadow-xl hover:shadow-cyan-500/25">
             <span className="relative z-10">Connect Your Hotel</span>
             <div className="absolute inset-0 bg-gradient-to-r from-purple-500 to-cyan-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-          </button>
+          </Link>
         </motion.div>
       </div>
 
